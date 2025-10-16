@@ -1,0 +1,212 @@
+// RBAC-feature: Task Assignment Demo Page Styles
+
+.task-assignment {
+  padding: var(--spacing-large);
+  max-width: 1200px;
+  margin: 0 auto;
+
+  &__wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-large);
+  }
+
+  &__loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+  }
+
+  &__info-box {
+    background-color: var(--color-info-bg, #e3f2fd);
+    border: 1px solid var(--color-info-border, #90caf9);
+    border-radius: var(--border-radius-base);
+    padding: var(--spacing-base);
+    margin-bottom: var(--spacing-base);
+
+    ul {
+      margin: var(--spacing-tight) 0 0 var(--spacing-large);
+      padding: 0;
+
+      li {
+        margin-bottom: var(--spacing-tight);
+
+        code {
+          background-color: var(--color-code-bg, #f5f5f5);
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: monospace;
+          font-size: 14px;
+        }
+      }
+    }
+  }
+
+  &__section {
+    border: 1px solid var(--color-border, #e0e0e0);
+    border-radius: var(--border-radius-base);
+    padding: var(--spacing-large);
+    background-color: var(--color-surface, #ffffff);
+
+    & + & {
+      margin-top: var(--spacing-large);
+    }
+  }
+
+  &__assignment-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-base);
+  }
+
+  &__form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-tight);
+
+    label {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--color-text-primary, #333333);
+    }
+
+    select {
+      padding: var(--spacing-tight) var(--spacing-base);
+      border: 1px solid var(--color-border, #e0e0e0);
+      border-radius: var(--border-radius-base);
+      font-size: 14px;
+      background-color: var(--color-surface, #ffffff);
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--color-primary, #1890ff);
+      }
+
+      &:focus {
+        outline: none;
+        border-color: var(--color-primary, #1890ff);
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+      }
+    }
+  }
+
+  &__user-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-tight);
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--color-border, #e0e0e0);
+    border-radius: var(--border-radius-base);
+    padding: var(--spacing-tight);
+  }
+
+  &__user-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-tight);
+    padding: var(--spacing-tight) var(--spacing-base);
+    border-radius: var(--border-radius-base);
+    cursor: pointer;
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: var(--color-hover, #f5f5f5);
+    }
+
+    &--selected {
+      background-color: var(--color-primary-light, #e6f7ff);
+      border: 1px solid var(--color-primary, #1890ff);
+    }
+
+    span {
+      flex: 1;
+      font-size: 14px;
+      color: var(--color-text-primary, #333333);
+    }
+  }
+
+  &__role-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 12px;
+    background-color: var(--color-neutral-light, #f0f0f0);
+    color: var(--color-text-secondary, #666666);
+  }
+
+  &__task-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-base);
+  }
+
+  &__task-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-tight);
+    padding: var(--spacing-base);
+    border: 1px solid var(--color-border, #e0e0e0);
+    border-radius: var(--border-radius-base);
+    background-color: var(--color-surface, #ffffff);
+  }
+
+  &__task-info {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-primary, #333333);
+
+    strong {
+      color: var(--color-primary, #1890ff);
+    }
+  }
+
+  &__task-assignments {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-tight);
+    flex-wrap: wrap;
+
+    span {
+      font-size: 14px;
+      color: var(--color-text-secondary, #666666);
+    }
+  }
+
+  &__assignment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 12px;
+    background-color: var(--color-success-light, #f6ffed);
+    border: 1px solid var(--color-success, #52c41a);
+    color: var(--color-text-primary, #333333);
+  }
+
+  &__no-permission {
+    padding: var(--spacing-large);
+    text-align: center;
+    color: var(--color-text-secondary, #666666);
+  }
+}
+
+.text-neutral-content-subtler {
+  color: var(--color-text-tertiary, #999999);
+}
+
+.mb-base {
+  margin-bottom: var(--spacing-base);
+}
+
+.mb-tight {
+  margin-bottom: var(--spacing-tight);
+}
+
+.mt-base {
+  margin-top: var(--spacing-base);
+}

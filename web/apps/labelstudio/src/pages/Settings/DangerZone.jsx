@@ -11,6 +11,7 @@ import { Spinner } from "../../components/Spinner/Spinner";
 import { useAPI } from "../../providers/ApiProvider";
 import { useProject } from "../../providers/ProjectProvider";
 import { cn } from "../../utils/bem";
+import { useProjectPermissions } from "../../hooks/useProjectPermissions"; // RBAC-feature
 
 export const DangerZone = () => {
   const { project } = useProject();
@@ -18,6 +19,7 @@ export const DangerZone = () => {
   const history = useHistory();
   const toast = useToast();
   const [processing, setProcessing] = useState(null);
+  const { canDelete, canManageTasks } = useProjectPermissions(); // RBAC-feature
 
   useUpdatePageTitle(createTitleFromSegments([project?.title, "Danger Zone"]));
 
@@ -163,16 +165,22 @@ export const DangerZone = () => {
         type: "annotations",
         disabled: true, //&& !project.total_annotations_number,
         label: `Delete ${project.total_annotations_number} Annotations`,
+        // RBAC-feature: Only Manager+ can delete annotations
+        hidden: !canManageTasks,
       },
       {
         type: "tasks",
         disabled: true, //&& !project.task_number,
         label: `Delete ${project.task_number} Tasks`,
+        // RBAC-feature: Only Manager+ can delete tasks
+        hidden: !canManageTasks,
       },
       {
         type: "predictions",
         disabled: true, //&& !project.total_predictions_number,
         label: `Delete ${project.total_predictions_number} Predictions`,
+        // RBAC-feature: Only Manager+ can delete predictions
+        hidden: !canManageTasks,
       },
       {
         type: "reset_cache",
@@ -191,9 +199,11 @@ export const DangerZone = () => {
         type: "project",
         help: "Deleting a project removes all tasks, annotations, and project data from the database.",
         label: "Delete Project",
+        // RBAC-feature: Only Owner can delete project
+        hidden: !canDelete,
       },
     ],
-    [project],
+    [project, canDelete, canManageTasks], // RBAC-feature: added dependencies
   );
 
   return (
@@ -212,8 +222,9 @@ export const DangerZone = () => {
             const waiting = processing === btn.type;
             const disabled = btn.disabled || (processing && !waiting);
 
+            // RBAC-feature: Skip rendering hidden buttons
             return (
-              btn.disabled !== true && (
+              btn.disabled !== true && !btn.hidden && (
                 <div className={cn("settings-wrapper")} key={btn.type}>
                   <Typography variant="title" size="large">
                     {btn.label}

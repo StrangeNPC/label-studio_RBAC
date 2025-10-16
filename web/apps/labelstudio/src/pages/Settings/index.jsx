@@ -7,12 +7,19 @@ import { LabelingSettings } from "./LabelingSettings";
 import { MachineLearningSettings } from "./MachineLearningSettings/MachineLearningSettings";
 import { PredictionsSettings } from "./PredictionsSettings/PredictionsSettings";
 import { StorageSettings } from "./StorageSettings/StorageSettings";
+import { MembersSettings } from "./MembersSettings"; // RBAC-feature
 import { isInLicense, LF_CLOUD_STORAGE_FOR_MANAGERS } from "../../utils/license-flags";
 import "./settings.scss";
 
 const isAllowCloudStorage = !isInLicense(LF_CLOUD_STORAGE_FOR_MANAGERS);
 
+// RBAC-feature: Import hook for conditional menu items
+import { useProjectPermissions } from "../../hooks/useProjectPermissions";
+
 export const MenuLayout = ({ children, ...routeProps }) => {
+  // RBAC-feature: Get user permissions
+  const { canManageMembers } = useProjectPermissions();
+
   return (
     <SidebarMenu
       menuItems={[
@@ -23,6 +30,7 @@ export const MenuLayout = ({ children, ...routeProps }) => {
         PredictionsSettings,
         isAllowCloudStorage && StorageSettings,
         WebhookPage,
+        canManageMembers && MembersSettings, // RBAC-feature: Only Owner/Admin see Members tab
         DangerZone,
       ].filter(Boolean)}
       path={routeProps.match.url}
@@ -37,6 +45,7 @@ const pages = {
   MachineLearningSettings,
   PredictionsSettings,
   WebhookPage,
+  MembersSettings, // RBAC-feature
   DangerZone,
 };
 

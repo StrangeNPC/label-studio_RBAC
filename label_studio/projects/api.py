@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 
+from core.api_permissions import HasObjectPermission
 from core.filters import ListFilter
 from core.label_config import config_essential_data_has_changed
 from core.mixins import GetParentObjectMixin
@@ -175,11 +176,25 @@ class ProjectListAPI(generics.ListCreateAPIView):
     pagination_class = ProjectListPagination
 
     def get_queryset(self):
+        # RBAC-feature: Filter projects by membership
+        # Original: projects = Project.objects.filter(organization=self.request.user.active_organization)
+        from projects.models import ProjectMember
+
         serializer = GetFieldsSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data.get('include')
         filter = serializer.validated_data.get('filter')
-        projects = Project.objects.filter(organization=self.request.user.active_organization).order_by(
+
+        # Filter to projects where user is a member
+        user_project_ids = ProjectMember.objects.filter(
+            user=self.request.user,
+            enabled=True
+        ).values_list('project_id', flat=True)
+
+        projects = Project.objects.filter(
+            id__in=user_project_ids,
+            organization=self.request.user.active_organization
+        ).order_by(
             F('pinned_at').desc(nulls_last=True), '-created_at'
         )
         if filter in ['pinned_only', 'exclude_pinned']:
@@ -192,14 +207,32 @@ class ProjectListAPI(generics.ListCreateAPIView):
         return context
 
     def perform_create(self, ser):
+        from projects.models import ProjectMember, RoleChoices
+
         try:
-            ser.save(organization=self.request.user.active_organization)
+            # RBAC-feature: Save project and add creator as owner
+            project = ser.save(organization=self.request.user.active_organization)
+
+            # Add creator as owner
+            member = ProjectMember.objects.create(
+                project=project,
+                user=self.request.user,
+                role=RoleChoices.OWNER,
+                enabled=True
+            )
+            logger.info(f'RBAC: Created ProjectMember {member.id} with role={member.role} for user={self.request.user.id} in project={project.id}')
         except IntegrityError as e:
-            if str(e) == 'UNIQUE constraint failed: project.title, project.created_by_id':
+            error_msg = str(e)
+            logger.error(f'IntegrityError during project creation: {error_msg}')
+            if 'project.title' in error_msg or 'created_by' in error_msg:
                 raise ProjectExistException(
                     'Project with the same name already exists: {}'.format(ser.validated_data.get('title', ''))
                 )
-            raise LabelStudioDatabaseException('Database error during project creation. Try again.')
+            # Check if it's a duplicate ProjectMember
+            if 'project_member' in error_msg.lower():
+                logger.warning(f'ProjectMember already exists for user={self.request.user.id} project={project.id}')
+                return
+            raise LabelStudioDatabaseException(f'Database error during project creation: {error_msg}')
 
     def get(self, request, *args, **kwargs):
         return super(ProjectListAPI, self).get(request, *args, **kwargs)
@@ -235,10 +268,24 @@ class ProjectCountsListAPI(generics.ListAPIView):
     pagination_class = ProjectListPagination
 
     def get_queryset(self):
+        # RBAC-feature: Filter projects by membership
+        # Original: return Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization)
+        from projects.models import ProjectMember
+
         serializer = GetFieldsSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data.get('include')
-        return Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization)
+
+        # Filter to projects where user is a member
+        user_project_ids = ProjectMember.objects.filter(
+            user=self.request.user,
+            enabled=True
+        ).values_list('project_id', flat=True)
+
+        return Project.objects.with_counts(fields=fields).filter(
+            id__in=user_project_ids,
+            organization=self.request.user.active_organization
+        )
 
 
 @method_decorator(
@@ -355,25 +402,51 @@ class ProjectAPI(generics.RetrieveUpdateDestroyAPIView):
     )
     serializer_class = ProjectSerializer
 
+    # RBAC-feature: Add DRF object-level permission check
+    permission_classes = api_settings.DEFAULT_PERMISSION_CLASSES + [HasObjectPermission]
+
     redirect_route = 'projects:project-detail'
     redirect_kwarg = 'pk'
 
     def get_queryset(self):
+        # RBAC-feature: Filter projects by membership
+        # Original: return Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization)
+        from projects.models import ProjectMember
+
         serializer = GetFieldsSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data.get('include')
-        return Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization)
+
+        # Filter to projects where user is a member
+        user_project_ids = ProjectMember.objects.filter(
+            user=self.request.user,
+            enabled=True
+        ).values_list('project_id', flat=True)
+
+        return Project.objects.with_counts(fields=fields).filter(
+            id__in=user_project_ids,
+            organization=self.request.user.active_organization
+        )
 
     def get(self, request, *args, **kwargs):
+        # RBAC-feature: Check view permission
+        project = self.get_object()
+        project.check_permission(request.user, 'projects.view')
         return super(ProjectAPI, self).get(request, *args, **kwargs)
 
     @api_webhook_for_delete(WebhookAction.PROJECT_DELETED)
     def delete(self, request, *args, **kwargs):
+        # RBAC-feature: Check delete permission
+        project = self.get_object()
+        project.check_permission(request.user, 'projects.delete')
         return super(ProjectAPI, self).delete(request, *args, **kwargs)
 
     @api_webhook(WebhookAction.PROJECT_UPDATED)
     def patch(self, request, *args, **kwargs):
+        # RBAC-feature: Check change permission
         project = self.get_object()
+        project.check_permission(request.user, 'projects.change')
+
         label_config = self.request.data.get('label_config')
 
         # config changes can break view, so we need to reset them
@@ -393,6 +466,9 @@ class ProjectAPI(generics.RetrieveUpdateDestroyAPIView):
     @extend_schema(exclude=True)
     @api_webhook(WebhookAction.PROJECT_UPDATED)
     def put(self, request, *args, **kwargs):
+        # RBAC-feature: Check change permission
+        project = self.get_object()
+        project.check_permission(request.user, 'projects.change')
         return super(ProjectAPI, self).put(request, *args, **kwargs)
 
 
@@ -885,3 +961,142 @@ class ProjectAnnotatorsAPI(generics.RetrieveAPIView):
         users = User.objects.filter(id__in=annotator_ids).prefetch_related('om_through').order_by('id')
         data = UserSimpleSerializer(users, many=True, context={'request': request}).data
         return Response(data)
+
+
+# RBAC-feature
+@method_decorator(
+    name='get',
+    decorator=extend_schema(
+        tags=['Projects'],
+        summary='List project members',
+        description='Return list of project members with their roles.',
+        extensions={'x-fern-audiences': ['public']},
+    ),
+)
+@method_decorator(
+    name='post',
+    decorator=extend_schema(
+        tags=['Projects'],
+        summary='Add project member',
+        description='Add a new member to the project with a specific role.',
+        extensions={'x-fern-audiences': ['public']},
+    ),
+)
+class ProjectMembersListAPI(GetParentObjectMixin, generics.ListCreateAPIView):
+    from projects.models import ProjectMember
+    from projects.serializers_rbac import ProjectMemberSerializer
+
+    parser_classes = (JSONParser,)
+    parent_queryset = Project.objects.all()
+    serializer_class = ProjectMemberSerializer
+    queryset = ProjectMember.objects.all()
+
+    def get_queryset(self):
+        project = self.parent_object
+        project.check_permission(self.request.user, 'projects.view_members')
+        return ProjectMember.objects.filter(project=project).select_related('user').order_by('created_at')
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['project'] = self.parent_object
+        return context
+
+    def perform_create(self, serializer):
+        project = self.parent_object
+        project.check_permission(self.request.user, 'projects.manage_members')
+        serializer.save()
+
+
+# RBAC-feature
+@method_decorator(
+    name='patch',
+    decorator=extend_schema(
+        tags=['Projects'],
+        summary='Update member role',
+        description='Update the role of a project member.',
+        extensions={'x-fern-audiences': ['public']},
+    ),
+)
+@method_decorator(
+    name='delete',
+    decorator=extend_schema(
+        tags=['Projects'],
+        summary='Remove project member',
+        description='Remove a member from the project.',
+        extensions={'x-fern-audiences': ['public']},
+    ),
+)
+class ProjectMembersDetailAPI(GetParentObjectMixin, generics.RetrieveUpdateDestroyAPIView):
+    from projects.models import ProjectMember, RoleChoices
+    from projects.serializers_rbac import ProjectMemberRoleUpdateSerializer
+
+    parser_classes = (JSONParser,)
+    parent_queryset = Project.objects.all()
+    queryset = ProjectMember.objects.all()
+    lookup_url_kwarg = 'member_pk'
+
+    def get_serializer_class(self):
+        if self.request.method == 'PATCH':
+            from projects.serializers_rbac import ProjectMemberRoleUpdateSerializer
+            return ProjectMemberRoleUpdateSerializer
+        from projects.serializers_rbac import ProjectMemberSerializer
+        return ProjectMemberSerializer
+
+    def get_queryset(self):
+        project = self.parent_object
+        return ProjectMember.objects.filter(project=project)
+
+    def update(self, request, *args, **kwargs):
+        project = self.parent_object
+        project.check_permission(self.request.user, 'projects.manage_members')
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        from projects.models import ProjectMember, RoleChoices
+
+        project = self.parent_object
+        project.check_permission(self.request.user, 'projects.manage_members')
+
+        member = self.get_object()
+
+        if member.role == RoleChoices.OWNER:
+            owner_count = ProjectMember.objects.filter(
+                project=project,
+                role=RoleChoices.OWNER
+            ).count()
+            if owner_count == 1:
+                raise RestValidationError({
+                    'detail': 'Cannot remove the last owner from the project.'
+                })
+
+        return super().destroy(request, *args, **kwargs)
+
+
+# RBAC-feature
+@extend_schema(
+    tags=['Projects'],
+    summary='Get current user role',
+    description='Get the current user\'s role and permissions for this project.',
+    extensions={'x-fern-audiences': ['public']},
+)
+class ProjectMembersCurrentUserAPI(GetParentObjectMixin, generics.RetrieveAPIView):
+    from projects.models import ProjectMember
+    from projects.serializers_rbac import CurrentUserRoleSerializer
+
+    parser_classes = (JSONParser,)
+    parent_queryset = Project.objects.all()
+    serializer_class = CurrentUserRoleSerializer
+
+    def get_object(self):
+        from projects.models import ProjectMember
+
+        project = self.parent_object
+        project.check_permission(self.request.user)
+
+        try:
+            return ProjectMember.objects.get(
+                project=project,
+                user=self.request.user
+            )
+        except ProjectMember.DoesNotExist:
+            raise NotFound('You are not a member of this project.')

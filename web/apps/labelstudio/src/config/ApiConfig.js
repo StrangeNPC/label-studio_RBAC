@@ -24,6 +24,19 @@ export const API_CONFIG = {
     deleteProject: "DELETE:/projects/:pk",
     projectResetCache: "POST:/projects/:pk/summary/reset",
 
+    // RBAC-feature: Project Members
+    projectMembers: "GET:/projects/:pk/members",
+    projectMember: "GET:/projects/:pk/members/:memberPk",
+    updateProjectMember: "PATCH:/projects/:pk/members/:memberPk",
+    deleteProjectMember: "DELETE:/projects/:pk/members/:memberPk",
+    addProjectMember: "POST:/projects/:pk/members",
+    currentUserRole: "GET:/projects/:pk/members/me",
+
+    // RBAC-feature: Task Assignment
+    assignTask: "POST:/tasks/:taskId/assign",
+    unassignTask: "DELETE:/tasks/:taskId/unassign",
+    tasksAssignedToMe: "GET:/tasks/assigned-to-me",
+
     // Presigning
     presignUrlForTask: "/../tasks/:taskID/presign",
     presignUrlForProject: "/../projects/:projectId/presign",

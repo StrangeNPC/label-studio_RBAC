@@ -394,13 +394,29 @@ class Project(ProjectMixin, models.Model):
         self.token = create_hash()
         self.save(update_fields=['token'])
 
-    def add_collaborator(self, user):
+    # Original:
+    # def add_collaborator(self, user):
+    #     created = False
+    #     with transaction.atomic():
+    #         try:
+    #             ProjectMember.objects.get(user=user, project=self)
+    #         except ProjectMember.DoesNotExist:
+    #             ProjectMember.objects.create(user=user, project=self)
+    #             created = True
+    #         else:
+    #             logger.debug(f'Project membership {self} for user {user} already exists')
+    #     return created
+
+    # RBAC-feature
+    def add_collaborator(self, user, role=None):
         created = False
+        if role is None:
+            role = RoleChoices.ANNOTATOR
         with transaction.atomic():
             try:
                 ProjectMember.objects.get(user=user, project=self)
             except ProjectMember.DoesNotExist:
-                ProjectMember.objects.create(user=user, project=self)
+                ProjectMember.objects.create(user=user, project=self, role=role)
                 created = True
             else:
                 logger.debug(f'Project membership {self} for user {user} already exists')
@@ -794,6 +810,14 @@ class Project(ProjectMixin, models.Model):
             steps = ProjectOnboardingSteps.objects.all()
             objs = [ProjectOnboarding(project=self, step=step) for step in steps]
             ProjectOnboarding.objects.bulk_create(objs)
+
+            # RBAC-feature
+            if self.created_by:
+                ProjectMember.objects.get_or_create(
+                    user=self.created_by,
+                    project=self,
+                    defaults={'role': RoleChoices.OWNER}
+                )
 
         # argument for recalculate project task stats
         if recalc:
@@ -1275,6 +1299,32 @@ class LabelStreamHistory(models.Model):
         constraints = [models.UniqueConstraint(fields=['user', 'project'], name='unique_history')]
 
 
+# RBAC-feature
+class RoleChoices(models.TextChoices):
+    """
+    Role choices for project members in RBAC system.
+
+    OWNER: Full control over project, can transfer ownership and delete project
+    ADMIN: Administrative access, can manage members and settings
+    MANAGER: Task management, can assign tasks and review annotations
+    ANNOTATOR: Data labeling, can create/edit own annotations
+    REVIEWER: Quality control, can review and approve annotations
+    VIEWER: Read-only access to tasks and annotations
+    """
+    OWNER = 'owner', _('Owner')
+    ADMIN = 'admin', _('Admin')
+    MANAGER = 'manager', _('Manager')
+    ANNOTATOR = 'annotator', _('Annotator')
+    REVIEWER = 'reviewer', _('Reviewer')
+    VIEWER = 'viewer', _('Viewer')
+
+    @classmethod
+    @property
+    def values(cls):
+        """Return list of role values for validation"""
+        return [choice[0] for choice in cls.choices]
+
+
 class ProjectMember(models.Model):
 
     user = models.ForeignKey(
@@ -1282,8 +1332,66 @@ class ProjectMember(models.Model):
     )
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='members', help_text='Project ID')
     enabled = models.BooleanField(default=True, help_text='Project member is enabled')
+    # RBAC-feature
+    role = models.CharField(
+        _('role'),
+        max_length=20,
+        choices=RoleChoices.choices,
+        default=RoleChoices.ANNOTATOR,
+        help_text='User role in the project',
+        db_index=True
+    )
     created_at = models.DateTimeField(_('created at'), auto_now_add=True)
     updated_at = models.DateTimeField(_('updated at'), auto_now=True)
+
+    # RBAC-feature
+    def get_role_display_name(self):
+        """Get human-readable role name"""
+        return self.get_role_display()
+
+    # RBAC-feature
+    def has_role(self, role):
+        """Check if member has specific role"""
+        return self.role == role
+
+    # RBAC-feature
+    def is_owner(self):
+        """Check if member is an owner"""
+        return self.role == RoleChoices.OWNER
+
+    # RBAC-feature
+    def is_admin(self):
+        """Check if member is an admin"""
+        return self.role == RoleChoices.ADMIN
+
+    # RBAC-feature
+    def is_manager(self):
+        """Check if member is a manager"""
+        return self.role == RoleChoices.MANAGER
+
+    # RBAC-feature
+    def is_annotator(self):
+        """Check if member is an annotator"""
+        return self.role == RoleChoices.ANNOTATOR
+
+    # RBAC-feature
+    def is_reviewer(self):
+        """Check if member is a reviewer"""
+        return self.role == RoleChoices.REVIEWER
+
+    # RBAC-feature
+    def is_viewer(self):
+        """Check if member is a viewer"""
+        return self.role == RoleChoices.VIEWER
+
+    # RBAC-feature
+    def has_admin_access(self):
+        """Check if member has Owner or Admin role"""
+        return self.role in [RoleChoices.OWNER, RoleChoices.ADMIN]
+
+    # RBAC-feature
+    def __str__(self):
+        return f'{self.user.email} - {self.get_role_display_name()} in {self.project.title}'
 
 
 class ProjectSummary(models.Model):

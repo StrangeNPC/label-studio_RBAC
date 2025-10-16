@@ -21,6 +21,10 @@ _api_urlpatterns = [
         api.AnnotationDraftListAPI.as_view(),
         name='task-annotations-drafts',
     ),
+    # RBAC-feature: Task assignment endpoints
+    path('<int:pk>/assign/', api.TaskAssignAPI.as_view(), name='task-assign'),
+    path('<int:pk>/unassign/', api.TaskUnassignAPI.as_view(), name='task-unassign'),
+    path('assigned-to-me/', api.TasksAssignedToMeAPI.as_view(), name='tasks-assigned-to-me'),
 ]
 
 _api_annotations_urlpatterns = [

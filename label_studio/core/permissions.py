@@ -26,6 +26,7 @@ class AllPermissions(BaseModel):
     tasks_view: str = 'tasks.view'
     tasks_change: str = 'tasks.change'
     tasks_delete: str = 'tasks.delete'
+    tasks_assign: str = 'tasks.assign'
     annotations_create: str = 'annotations.create'
     annotations_view: str = 'annotations.view'
     annotations_change: str = 'annotations.change'
@@ -64,11 +65,22 @@ class ViewClassPermission(BaseModel):
 def make_perm(name, pred, overwrite=False):
     if rules.perm_exists(name):
         if overwrite:
+            logger.warning(f'[RBAC-DEBUG] make_perm: Overwriting {name}')
             rules.remove_perm(name)
         else:
+            logger.warning(f'[RBAC-DEBUG] make_perm: Permission {name} already exists, skipping')
             return
+    logger.warning(f'[RBAC-DEBUG] make_perm: Adding {name}')
     rules.add_perm(name, pred)
 
 
-for _, permission_name in all_permissions:
-    make_perm(permission_name, rules.is_authenticated)
+# RBAC-FIX: Disabled default permission registration with rules.is_authenticated
+# This was causing ALL authenticated users to have access to ALL resources
+# Instead, permissions are now ONLY registered in their respective modules (e.g., projects/permissions.py)
+# with proper RBAC predicates that check roles and project membership
+logger.warning(f'[RBAC-DEBUG] core/permissions.py: DEFAULT PERMISSION REGISTRATION DISABLED')
+logger.warning(f'[RBAC-DEBUG] core/permissions.py: Permissions will be registered by their respective modules with proper RBAC predicates')
+# for _, permission_name in all_permissions:
+#     logger.warning(f'[RBAC-DEBUG] core/permissions.py: Registering {permission_name} with rules.is_authenticated')
+#     make_perm(permission_name, rules.is_authenticated)
+# logger.warning(f'[RBAC-DEBUG] core/permissions.py: Finished registering default permissions')

@@ -20,7 +20,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from projects.functions.stream_history import fill_history_annotation
 from projects.models import Project
-from rest_framework import generics, viewsets
+from rest_framework import generics, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -38,6 +38,8 @@ from tasks.serializers import (
     AnnotationDraftSerializer,
     AnnotationSerializer,
     PredictionSerializer,
+    TaskAssignmentResponseSerializer,
+    TaskAssignmentSerializer,
     TaskSerializer,
     TaskSimpleSerializer,
 )
@@ -903,3 +905,136 @@ class AnnotationConvertAPI(generics.RetrieveAPIView):
         emit_webhooks_for_instance(organization, project, WebhookAction.ANNOTATIONS_DELETED, [pk])
         data = AnnotationDraftSerializer(instance=draft).data
         return Response(status=201, data=data)
+
+
+# RBAC-feature: Task assignment API endpoints
+@extend_schema(
+    tags=['Tasks'],
+    summary='Assign users to task',
+    description='Assign one or more users to a specific task. Only managers, admins, and owners can assign tasks.',
+    parameters=[
+        OpenApiParameter(name='id', type=OpenApiTypes.INT, location='path', description='Task ID'),
+    ],
+    request=TaskAssignmentSerializer,
+    responses={
+        '200': OpenApiResponse(
+            description='Task assignment successful',
+            response=TaskAssignmentResponseSerializer,
+        ),
+        '403': OpenApiResponse(description='Permission denied - user does not have task assignment permission'),
+        '404': OpenApiResponse(description='Task not found'),
+    },
+)
+class TaskAssignAPI(generics.GenericAPIView):
+    parser_classes = (JSONParser,)
+    permission_required = all_permissions.tasks_assign
+    serializer_class = TaskAssignmentSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(project__organization=self.request.user.active_organization)
+
+    def post(self, request, pk):
+        task = generics.get_object_or_404(self.get_queryset(), pk=pk)
+
+        if not task.project.has_perm(request.user, 'tasks.assign'):
+            raise PermissionDenied('You do not have permission to assign tasks in this project')
+
+        serializer = self.get_serializer(data=request.data, context={'task': task})
+        serializer.is_valid(raise_exception=True)
+
+        user_ids = serializer.validated_data['user_ids']
+        from users.models import User
+        users = User.objects.filter(id__in=user_ids)
+
+        task.assign_to_users(list(users))
+
+        response_data = {
+            'task_id': task.id,
+            'assigned_users': list(task.assigned_to.values_list('id', flat=True))
+        }
+
+        return Response(
+            TaskAssignmentResponseSerializer(response_data).data,
+            status=status.HTTP_200_OK
+        )
+
+
+@extend_schema(
+    tags=['Tasks'],
+    summary='Unassign users from task',
+    description='Remove user assignments from a task. Only managers, admins, and owners can unassign tasks.',
+    parameters=[
+        OpenApiParameter(name='id', type=OpenApiTypes.INT, location='path', description='Task ID'),
+    ],
+    request=TaskAssignmentSerializer,
+    responses={
+        '200': OpenApiResponse(
+            description='Task unassignment successful',
+            response=TaskAssignmentResponseSerializer,
+        ),
+        '403': OpenApiResponse(description='Permission denied - user does not have task assignment permission'),
+        '404': OpenApiResponse(description='Task not found'),
+    },
+)
+class TaskUnassignAPI(generics.GenericAPIView):
+    parser_classes = (JSONParser,)
+    permission_required = all_permissions.tasks_assign
+    serializer_class = TaskAssignmentSerializer
+
+    def get_queryset(self):
+        return Task.objects.filter(project__organization=self.request.user.active_organization)
+
+    def delete(self, request, pk):
+        task = generics.get_object_or_404(self.get_queryset(), pk=pk)
+
+        if not task.project.has_perm(request.user, 'tasks.assign'):
+            raise PermissionDenied('You do not have permission to unassign tasks in this project')
+
+        serializer = self.get_serializer(data=request.data, context={'task': task})
+        serializer.is_valid(raise_exception=True)
+
+        user_ids = serializer.validated_data['user_ids']
+        from users.models import User
+        users = User.objects.filter(id__in=user_ids)
+
+        task.unassign_from_users(list(users))
+
+        response_data = {
+            'task_id': task.id,
+            'assigned_users': list(task.assigned_to.values_list('id', flat=True))
+        }
+
+        return Response(
+            TaskAssignmentResponseSerializer(response_data).data,
+            status=status.HTTP_200_OK
+        )
+
+
+@extend_schema(
+    tags=['Tasks'],
+    summary='Get tasks assigned to current user',
+    description='Retrieve all tasks assigned to the authenticated user.',
+    parameters=[
+        OpenApiParameter(name='project', type=OpenApiTypes.INT, location='query', description='Filter by project ID', required=False),
+    ],
+    responses={
+        '200': OpenApiResponse(
+            description='List of tasks assigned to current user',
+            response=TaskSerializer(many=True),
+        ),
+    },
+)
+class TasksAssignedToMeAPI(generics.ListAPIView):
+    serializer_class = TaskSerializer
+    permission_required = all_permissions.tasks_view
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['project']
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Task.objects.filter(
+            assigned_to=user,
+            project__organization=user.active_organization
+        ).order_by('-id')
+
+        return queryset

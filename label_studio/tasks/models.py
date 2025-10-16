@@ -167,6 +167,14 @@ class Task(TaskMixin, models.Model):
         help_text='When the last comment was updated',
     )
 
+    # RBAC-feature
+    assigned_to = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='assigned_tasks',
+        blank=True,
+        help_text='Users assigned to this task'
+    )
+
     objects = TaskManager()  # task manager by default
     prepared = PreparedTaskManager()  # task manager with filters, ordering, etc for data_manager app
 
@@ -357,7 +365,26 @@ class Task(TaskMixin, models.Model):
         mixin_has_permission = cast(bool, super().has_permission(user))
 
         user.project = self.project  # link for activity log
-        return mixin_has_permission and self.project.has_permission(user)
+
+        if not mixin_has_permission or not self.project.has_permission(user):
+            return False
+
+        return True
+
+    # RBAC-feature: Task assignment helper methods
+    def is_assigned_to(self, user: 'User') -> bool:  # noqa: F821
+        """Check if task is assigned to the specified user"""
+        return self.assigned_to.filter(id=user.id).exists()
+
+    def assign_to_users(self, users: list) -> None:
+        """Assign task to list of users"""
+        for user in users:
+            self.assigned_to.add(user)
+
+    def unassign_from_users(self, users: list) -> None:
+        """Unassign task from list of users"""
+        for user in users:
+            self.assigned_to.remove(user)
 
     def clear_expired_locks(self):
         self.locks.filter(expire_at__lt=now()).delete()

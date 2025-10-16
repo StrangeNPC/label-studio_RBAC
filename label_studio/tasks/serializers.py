@@ -834,3 +834,56 @@ class PredictionMetaSerializer(ModelSerializer):
 
 # LSE inherits this serializer
 TaskSerializerBulk = load_func(settings.TASK_SERIALIZER_BULK)
+
+
+# RBAC-feature: Task assignment serializers
+class TaskAssignmentSerializer(serializers.Serializer):
+    """
+    Serializer for assigning/unassigning users to tasks.
+    """
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True,
+        help_text='List of user IDs to assign/unassign',
+        min_length=1
+    )
+
+    def validate_user_ids(self, value):
+        """Validate that all user IDs exist and are project members"""
+        task = self.context.get('task')
+        if not task:
+            raise ValidationError('Task context is required')
+
+        project = task.project
+        users = User.objects.filter(id__in=value)
+
+        if users.count() != len(value):
+            invalid_ids = set(value) - set(users.values_list('id', flat=True))
+            raise ValidationError(f'Invalid user IDs: {invalid_ids}')
+
+        from projects.models import ProjectMember
+        project_member_ids = set(
+            ProjectMember.objects.filter(
+                project=project,
+                enabled=True
+            ).values_list('user_id', flat=True)
+        )
+
+        non_members = set(value) - project_member_ids
+        if non_members:
+            raise ValidationError(
+                f'Users {non_members} are not members of project {project.id}'
+            )
+
+        return value
+
+
+class TaskAssignmentResponseSerializer(serializers.Serializer):
+    """
+    Response serializer for task assignment operations.
+    """
+    task_id = serializers.IntegerField(help_text='Task ID')
+    assigned_users = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text='List of user IDs currently assigned to the task'
+    )

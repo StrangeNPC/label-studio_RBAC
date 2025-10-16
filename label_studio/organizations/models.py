@@ -135,7 +135,21 @@ class Organization(OrganizationMixin, models.Model):
         return self.projects.filter(members__user=user).exists()
 
     def has_permission(self, user):
-        return OrganizationMember.objects.filter(user=user, organization=self, deleted_at__isnull=True).exists()
+        logger.warning(f'[RBAC-DEBUG] Organization.has_permission ENTRY: user={user.id if user else None}, org={self.id}')
+        result = OrganizationMember.objects.filter(user=user, organization=self, deleted_at__isnull=True).exists()
+        logger.warning(
+            f'[RBAC-DEBUG] Organization.has_permission RESULT: '
+            f'user={user.id if user else None} ({user.email if hasattr(user, "email") else "anonymous"}), '
+            f'organization={self.id} ({self.title}), '
+            f'result={result}'
+        )
+        if not result:
+            all_members = list(OrganizationMember.objects.filter(organization=self).values('id', 'user_id', 'deleted_at'))
+            logger.warning(
+                f'[RBAC-DEBUG] Organization DENIED: user={user.id if user else None} not in org {self.id}. '
+                f'All members: {all_members}'
+            )
+        return result
 
     def add_user(self, user):
         if self.users.filter(pk=user.pk).exists():

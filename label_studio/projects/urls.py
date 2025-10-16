@@ -47,6 +47,10 @@ _api_urlpatterns = [
     path('<int:pk>/model-versions/', api.ProjectModelVersions.as_view(), name='project-model-versions'),
     # List all annotators for project
     path('<int:pk>/annotators/', api.ProjectAnnotatorsAPI.as_view(), name='project-annotators'),
+    # RBAC-feature: Project member management
+    path('<int:pk>/members/', api.ProjectMembersListAPI.as_view(), name='project-members-list'),
+    path('<int:pk>/members/<int:member_pk>/', api.ProjectMembersDetailAPI.as_view(), name='project-members-detail'),
+    path('<int:pk>/members/me/', api.ProjectMembersCurrentUserAPI.as_view(), name='project-members-me'),
 ]
 
 _api_urlpatterns_templates = [
